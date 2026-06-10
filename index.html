@@ -94,6 +94,9 @@
   .node:hover .handle,.node.sel .handle{opacity:1}
   .node .inhandle{fill:var(--accent);stroke:#fff;stroke-width:2;opacity:0;pointer-events:none;transition:opacity .1s}
   .node:hover .inhandle,.node.sel .inhandle{opacity:1}
+  /* drop target while dragging an arrow (CSS :hover is frozen during a drag) */
+  .node.drop .inhandle,.node.drop .handle,.node.drop .rhandle{opacity:1}
+  .node.drop .bg{stroke:var(--accent);stroke-width:4}
   .node .rhandle{fill:#fff;stroke:#9aa5b3;stroke-width:2;opacity:0;cursor:ew-resize;transition:opacity .1s}
   .node:hover .rhandle,.node.sel .rhandle{opacity:1}
   .edge{fill:none;stroke:#9fb1c6;stroke-width:2.4}
@@ -248,6 +251,11 @@ function fitDims(n){
   return v;
 }
 function getDims(n){ return dims[n.id]||fitDims(n); }
+function nodeAtPoint(w, excludeId){            // card under a world point, with a forgiving margin
+  const p=cur(); if(!p) return null; const m=16;
+  return p.nodes.find(n=>{ if(n.id===excludeId) return false; const d=getDims(n);
+    return Math.abs(w.x-n.x)<=d.w/2+m && Math.abs(w.y-n.y)<=d.h/2+m; });
+}
 const emptyHint= document.getElementById("emptyHint");
 
 let state = load() || { projects:[], currentId:null };
@@ -789,6 +797,14 @@ window.addEventListener("mousemove",(e)=>{
     const sx=a.x+d.w/2, sy=a.y;                       // 출발 카드의 오른쪽 변에서 시작
     const co=Math.max(45,Math.abs(w.x-sx)*0.5);
     tempLink.setAttribute("d",`M ${sx} ${sy} C ${sx+co} ${sy}, ${w.x-co} ${w.y}, ${w.x} ${w.y}`);
+    // 드래그 중에는 :hover가 멈추므로, 커서 아래 대상 카드를 직접 하이라이트
+    const tgt=nodeAtPoint(w, drag.from);
+    const tid=tgt?tgt.id:null;
+    if(tid!==drag.dropId){
+      if(drag.dropId){ const pe=nodeLayer.querySelector('[data-node="'+drag.dropId+'"]'); if(pe) pe.classList.remove('drop'); }
+      if(tid){ const ne=nodeLayer.querySelector('[data-node="'+tid+'"]'); if(ne) ne.classList.add('drop'); }
+      drag.dropId=tid;
+    }
   }
 });
 
@@ -797,7 +813,7 @@ window.addEventListener("mouseup",(e)=>{
   if(drag.type==="link"){
     tempLink.removeAttribute("d");
     const w=toWorld(e); const p=cur();
-    const target=p.nodes.find(n=>{ if(n.id===drag.from) return false; const d=getDims(n); return Math.abs(w.x-n.x)<=d.w/2 && Math.abs(w.y-n.y)<=d.h/2; });
+    const target=nodeAtPoint(w, drag.from);
     if(target){
       const exists=p.edges.some(ed=>ed.from===drag.from&&ed.to===target.id);
       if(!exists && drag.from!==target.id){
