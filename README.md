@@ -32,6 +32,9 @@ The whole app is a single `index.html` (vanilla JS + SVG) wrapped in a tiny nati
 - **Search** tasks by name and jump straight to the card.
 - **Undo** (last 5 actions), pan/zoom canvas, hover-to-zoom cards.
 - **Export / Import** your data as JSON (backup or move between machines).
+- **Analyze workload with Claude** — one click runs the local `claude` CLI
+  (your existing Claude Code login — no API key, no extra cost) and returns a
+  concise focus / bottleneck / critical-path / next-steps analysis of the board.
 
 ---
 
@@ -95,9 +98,10 @@ one back — handy for backups or moving to another Mac.
 
 - `index.html` — the entire app (UI, canvas, storage) in one file. Open it in any browser
   too, if you prefer a tab over the native window.
-- `native/main.m` — a ~150-line Objective-C wrapper that hosts the page in a `WKWebView`.
+- `native/main.m` — an Objective-C wrapper that hosts the page in a `WKWebView`.
   It serves the bundled files over a private `wt://localhost` origin so `localStorage`
-  persists reliably, and wires up file open/save panels and standard menu shortcuts.
+  persists reliably, wires up file open/save panels and standard menu shortcuts, and
+  runs `claude -p` for the workload analysis (using your local Claude Code login).
 - `icon.svg` / `icon.icns` — the app icon (a green box → blue box arrow).
 - `build.sh` — compiles and installs the `.app`.
 

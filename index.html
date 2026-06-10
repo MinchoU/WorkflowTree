@@ -68,6 +68,17 @@
   ul.hk{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px}
   ul.hk li{font-size:13.5px;color:#4a5567;line-height:1.4}
   ul.hk b{color:#1f2937;font-weight:600}
+  .az-modal{width:580px}
+  .az-body{max-height:62vh;overflow:auto;font-size:13.5px;line-height:1.55;color:#374151}
+  .az-body h3{font-size:14.5px;color:#1f2937;margin:14px 0 5px}
+  .az-body h4{font-size:13.5px;color:#1f2937;margin:11px 0 4px}
+  .az-body b{color:#1f2937}
+  .az-loading{color:#8a93a3;display:flex;align-items:center;gap:9px}
+  .az-loading::before{content:"";width:15px;height:15px;border:2px solid #d6deea;border-top-color:var(--accent);border-radius:50%;animation:azspin .8s linear infinite}
+  @keyframes azspin{to{transform:rotate(360deg)}}
+  .az-foot{margin-top:14px;display:flex;gap:8px;justify-content:flex-end}
+  .az-foot button{padding:8px 14px;border:1px solid var(--line);background:#fff;border-radius:9px;cursor:pointer;font-size:13px;color:#374151}
+  .az-foot button:hover{border-color:var(--accent);color:var(--accent)}
 
   /* ---------- canvas ---------- */
   #canvasWrap{flex:1;position:relative;overflow:hidden}
@@ -162,6 +173,7 @@
       <button id="exportBtn">⬇ Export</button>
       <button id="importBtn">⬆ Import</button>
     </div>
+    <button id="analyzeBtn" class="side-foot">✨ Analyze workload</button>
     <button id="hotkeysBtn" class="side-foot">⌨ See hotkeys</button>
     <input type="file" id="importFile" accept="application/json,.json" style="display:none">
   </aside>
@@ -193,6 +205,13 @@
     </div>
     <div class="insp-body" id="inspBody"></div>
   </aside>
+
+  <div id="azOverlay" class="overlay">
+    <div class="modal az-modal">
+      <div class="modal-h">✨ Workload analysis <span id="azClose">✕</span></div>
+      <div id="azBody" class="az-body"></div>
+    </div>
+  </div>
 
   <div id="hkOverlay" class="overlay">
     <div class="modal">
@@ -577,6 +596,8 @@ function deleteSelected(){
      화살표가 있으면 같은 날짜라도 옆으로 → 한 날짜가 여러 컬럼을 차지할 수 있음.
    - 예상 날짜는 최소 컬럼을 정함(빠를수록 왼쪽).
    - 체인은 같은 행(가로 평행), 여러 개가 하나로 모이면 생성일순 세로 정렬.
+   - 화살표로 연결된 노드들 = 하나의 chunk. 서로 다른 chunk는 행을 공유하지 않고
+     위→아래로 완전히 분리해서 쌓는다.
 */
 function sortLayout(){
   const p=cur(); if(!p||p.nodes.length===0) return;
@@ -613,27 +634,58 @@ function sortLayout(){
   const colsArr=[];
   nodes.forEach(n=>{ const c=col[n.id]; (colsArr[c]||(colsArr[c]=[])).push(n.id); });
 
-  // 세로 좌표: 선행노드 평균(체인 가로 유지), 루트는 생성일순, 겹치면 카드 높이만큼 벌림
-  const yOf={};
-  for(let c=0;c<colsArr.length;c++){
-    const ids=colsArr[c]; if(!ids) continue;
-    const desired={};
-    ids.forEach(id=>{ const ps=inc[id].map(pid=>yOf[pid]).filter(v=>v!=null);
-      desired[id]= ps.length? ps.reduce((a,b)=>a+b,0)/ps.length : null; });
-    ids.sort((a,b)=>{
-      const da=desired[a], db=desired[b];
-      if(da==null&&db==null) return createdMs(a)-createdMs(b);
-      if(da==null) return 1; if(db==null) return -1;
-      return da-db || createdMs(a)-createdMs(b);
-    });
-    let prev=null;
-    ids.forEach(id=>{
-      let y=desired[id];
-      if(prev!=null){ const minY=yOf[prev]+H(prev)/2+H(id)/2+44; if(y==null||y<minY) y=minY; }
-      else if(y==null) y=0;
-      yOf[id]=y; prev=id;
-    });
-  }
+  // chunk(연결요소): 화살표(방향 무시)로 이어진 노드들을 한 chunk로 묶는다.
+  // 서로 다른 chunk는 같은 행을 절대 공유하지 않고 위→아래로 완전히 분리한다.
+  const comp={}; let nComp=0;
+  nodes.forEach(root=>{
+    if(comp[root.id]!=null) return;
+    comp[root.id]=nComp; const stack=[root.id];
+    while(stack.length){ const id=stack.pop();
+      [...out[id], ...inc[id]].forEach(nb=>{ if(comp[nb]==null){ comp[nb]=nComp; stack.push(nb); } }); }
+    nComp++;
+  });
+  const compIds={}; nodes.forEach(n=>{ (compIds[comp[n.id]]||(compIds[comp[n.id]]=[])).push(n.id); });
+  // chunk 배치 순서: 가장 이른 생성일 → 최소 컬럼
+  const compOrder=Object.keys(compIds).map(Number).sort((a,b)=>{
+    const ca=Math.min(...compIds[a].map(createdMs)), cb=Math.min(...compIds[b].map(createdMs));
+    if(ca!==cb) return ca-cb;
+    return Math.min(...compIds[a].map(id=>col[id])) - Math.min(...compIds[b].map(id=>col[id]));
+  });
+
+  // 세로 좌표: chunk마다 독립 배치(선행노드 평균=체인 가로 유지, 루트는 생성일순,
+  // 겹치면 카드 높이만큼 벌림) 후, 누적 오프셋으로 chunk를 위→아래로 쌓는다.
+  const CHUNK_GAP=120;
+  const yOf={}; let stackTop=0;
+  compOrder.forEach(ci=>{
+    const member=new Set(compIds[ci]);
+    for(let c=0;c<colsArr.length;c++){
+      const all=colsArr[c]; if(!all) continue;
+      const ids=all.filter(id=>member.has(id)); if(!ids.length) continue;
+      const desired={};
+      ids.forEach(id=>{ const ps=inc[id].map(pid=>yOf[pid]).filter(v=>v!=null);
+        desired[id]= ps.length? ps.reduce((a,b)=>a+b,0)/ps.length : null; });
+      ids.sort((a,b)=>{
+        const da=desired[a], db=desired[b];
+        if(da==null&&db==null) return createdMs(a)-createdMs(b);
+        if(da==null) return 1; if(db==null) return -1;
+        return da-db || createdMs(a)-createdMs(b);
+      });
+      let prev=null;
+      ids.forEach(id=>{
+        let y=desired[id];
+        if(prev!=null){ const minY=yOf[prev]+H(prev)/2+H(id)/2+44; if(y==null||y<minY) y=minY; }
+        else if(y==null) y=0;
+        yOf[id]=y; prev=id;
+      });
+    }
+    // 이 chunk의 세로 범위를 측정해 stackTop 아래로 통째로 이동
+    let cMin=Infinity, cMax=-Infinity;
+    compIds[ci].forEach(id=>{ cMin=Math.min(cMin, yOf[id]-H(id)/2); cMax=Math.max(cMax, yOf[id]+H(id)/2); });
+    if(!isFinite(cMin)){ cMin=0; cMax=0; }
+    const shift=stackTop-cMin;
+    compIds[ci].forEach(id=>{ yOf[id]+=shift; });
+    stackTop = cMax+shift + CHUNK_GAP;
+  });
 
   // x 좌표: 컬럼 폭을 반영해 가로 간격 확보
   const colW=[]; colsArr.forEach((ids,c)=>{ if(ids) colW[c]=Math.max(60, ...ids.map(W)); });
@@ -846,7 +898,7 @@ svg.addEventListener("wheel",(e)=>{
 },{passive:false});
 
 window.addEventListener("keydown",(e)=>{
-  if(e.key==="Escape"){ document.getElementById("hkOverlay").classList.remove("show"); return; }
+  if(e.key==="Escape"){ document.querySelectorAll(".overlay.show").forEach(o=>o.classList.remove("show")); return; }
   const el=document.activeElement;
   const typing=!!(el && (el.tagName==="INPUT"||el.tagName==="TEXTAREA"||el.isContentEditable));
   if((e.metaKey||e.ctrlKey) && (e.key==="z"||e.key==="Z") && !e.shiftKey){
@@ -921,6 +973,66 @@ const hkOverlay=document.getElementById("hkOverlay");
 document.getElementById("hotkeysBtn").onclick=()=>hkOverlay.classList.add("show");
 document.getElementById("hkClose").onclick=()=>hkOverlay.classList.remove("show");
 hkOverlay.onclick=(e)=>{ if(e.target===hkOverlay) hkOverlay.classList.remove("show"); };
+
+// ---- AI workload analysis (runs the local `claude` CLI via the native app — uses your plan, no API key) ----
+function buildAnalysisPrompt(){
+  const p=cur(); if(!p||!p.nodes.length) return "";
+  const nm=n=>plainText(n.name)||"(untitled)";
+  const L=[];
+  L.push("You are a project-planning assistant. Today's date is "+todayISO()+".");
+  L.push("Analyze this workflow and reply concisely in short markdown sections with bullet points: 1) current focus, 2) bottlenecks / at-risk or overdue items, 3) suggested critical path or ordering, 4) concrete next steps.");
+  L.push("\nProject: "+(p.name||"Untitled")+"\n\nTasks:");
+  p.nodes.forEach(n=>{
+    const meta=["status="+n.status];
+    if(n.date) meta.push("expected="+n.date);
+    if(n.startDate) meta.push("started="+n.startDate);
+    if(n.endDate) meta.push("ended="+n.endDate);
+    let line="- "+nm(n)+" ("+meta.join(", ")+")";
+    const note=(n.notes||"").trim();
+    if(note) line+=" — note: "+note.replace(/\s+/g," ");
+    L.push(line);
+  });
+  if(p.edges.length){
+    L.push("\nDependencies (A → B means A must come before B):");
+    p.edges.forEach(e=>{ const a=byId(e.from), b=byId(e.to); if(a&&b) L.push("- "+nm(a)+" → "+nm(b)); });
+  }
+  return L.join("\n");
+}
+function mdLite(t){
+  const esc=s=>s.replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+  return esc(t)
+    .replace(/^#{3,} (.*)$/gm,"<h4>$1</h4>")
+    .replace(/^#{1,2} (.*)$/gm,"<h3>$1</h3>")
+    .replace(/\*\*(.+?)\*\*/g,"<b>$1</b>")
+    .replace(/`([^`]+)`/g,"<code>$1</code>")
+    .replace(/^\s*[-*] (.*)$/gm,"• $1")
+    .replace(/\n/g,"<br>");
+}
+const azOverlay=document.getElementById("azOverlay");
+const azBody=document.getElementById("azBody");
+const closeAz=()=>azOverlay.classList.remove("show");
+function runAnalysis(){
+  const prompt=buildAnalysisPrompt();
+  if(!prompt){ alert("Add some tasks first, then analyze."); return; }
+  azOverlay.classList.add("show");
+  if(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.analyze){
+    azBody.innerHTML='<div class="az-loading">Analyzing with Claude… this can take 10–30s.</div>';
+    window.webkit.messageHandlers.analyze.postMessage(prompt);
+  } else {
+    // Not in the native app (plain browser) — copy the prompt to paste into Claude.
+    try{ navigator.clipboard.writeText(prompt); }catch(e){}
+    azBody.innerHTML='<div class="placeholder">This runs Claude only inside the WorkflowTree app. I\'ve copied an analysis prompt to your clipboard — paste it into Claude (claude.ai or Claude Code) to get the analysis.</div>';
+  }
+}
+window.__wtAnalyzeDone=function(text){
+  azBody.innerHTML='<div class="az-out">'+mdLite(text||"(empty response)")+'</div>'+
+    '<div class="az-foot"><button id="azRerun">↻ Re-run</button><button id="azCopy">Copy</button></div>';
+  document.getElementById("azRerun").onclick=runAnalysis;
+  document.getElementById("azCopy").onclick=()=>{ try{ navigator.clipboard.writeText(text); }catch(e){} };
+};
+document.getElementById("analyzeBtn").onclick=runAnalysis;
+document.getElementById("azClose").onclick=closeAz;
+azOverlay.onclick=(e)=>{ if(e.target===azOverlay) closeAz(); };
 window.addEventListener("resize",()=>{ const r=svg.getBoundingClientRect(); view.h=view.w*(r.height/r.width); applyView(); });
 
 /* ---------------- go ---------------- */

@@ -81,7 +81,8 @@ static NSString *mimeType(NSString *ext) {
     WKWebViewConfiguration *config = [WKWebViewConfiguration new];
     [config setURLSchemeHandler:self.handler forURLScheme:@"wt"];
     config.websiteDataStore = [WKWebsiteDataStore defaultDataStore];  // persistent localStorage
-    [config.userContentController addScriptMessageHandler:self name:@"save"];  // Export -> native save panel
+    [config.userContentController addScriptMessageHandler:self name:@"save"];     // Export -> native save panel
+    [config.userContentController addScriptMessageHandler:self name:@"analyze"];  // Analyze -> run `claude -p`
 
     NSRect frame = NSMakeRect(0, 0, 1320, 860);
     self.window = [[NSWindow alloc] initWithContentRect:frame
@@ -159,15 +160,58 @@ static NSString *mimeType(NSString *ext) {
 }
 
 - (void)userContentController:(WKUserContentController *)ucc didReceiveScriptMessage:(WKScriptMessage *)message {
-    if (![message.name isEqualToString:@"save"]) return;
-    NSString *json = [message.body isKindOfClass:[NSString class]] ? (NSString *)message.body : @"";
-    NSSavePanel *panel = [NSSavePanel savePanel];
-    panel.nameFieldStringValue = @"workflowtree-backup.json";
-    [panel beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse resp) {
-        if (resp == NSModalResponseOK && panel.URL) {
-            [json writeToURL:panel.URL atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    NSString *body = [message.body isKindOfClass:[NSString class]] ? (NSString *)message.body : @"";
+    if ([message.name isEqualToString:@"save"]) {
+        NSSavePanel *panel = [NSSavePanel savePanel];
+        panel.nameFieldStringValue = @"workflowtree-backup.json";
+        [panel beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse resp) {
+            if (resp == NSModalResponseOK && panel.URL) {
+                [body writeToURL:panel.URL atomically:YES encoding:NSUTF8StringEncoding error:nil];
+            }
+        }];
+    } else if ([message.name isEqualToString:@"analyze"]) {
+        [self runClaudeAnalysis:body];
+    }
+}
+
+// Run the Claude Code CLI in print mode using the user's existing login (no API key,
+// counts toward their plan, no separate billing). Result is sent back to the page.
+- (void)runClaudeAnalysis:(NSString *)prompt {
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSString *result;
+        @try {
+            NSTask *task = [[NSTask alloc] init];
+            task.executableURL = [NSURL fileURLWithPath:@"/bin/zsh"];
+            // Login shell + common install dirs so `claude` is on PATH; merge stderr.
+            task.arguments = @[@"-lc",
+                @"export PATH=\"$HOME/.claude/local:$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\"; claude -p \"$WT_PROMPT\" 2>&1"];
+            NSMutableDictionary *env = [[[NSProcessInfo processInfo] environment] mutableCopy];
+            env[@"WT_PROMPT"] = prompt ?: @"";
+            task.environment = env;
+            NSPipe *pipe = [NSPipe pipe];
+            task.standardOutput = pipe;
+            task.standardError = pipe;
+            NSError *err = nil;
+            if (![task launchAndReturnError:&err]) {
+                result = [NSString stringWithFormat:@"Couldn't launch the analysis: %@", err.localizedDescription];
+            } else {
+                NSData *data = [pipe.fileHandleForReading readDataToEndOfFile];
+                [task waitUntilExit];
+                result = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"";
+                if (result.length == 0) {
+                    result = @"(no output — make sure the `claude` CLI is installed and you're logged in)";
+                }
+            }
+        } @catch (NSException *e) {
+            result = [NSString stringWithFormat:@"Error: %@", e.reason];
         }
-    }];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSData *jsonData = [NSJSONSerialization dataWithJSONObject:@[result] options:0 error:nil];
+            NSString *jsonArr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+            NSString *js = [NSString stringWithFormat:@"window.__wtAnalyzeDone && window.__wtAnalyzeDone((%@)[0])", jsonArr];
+            [self.webView evaluateJavaScript:js completionHandler:nil];
+        });
+    });
 }
 @end
 
