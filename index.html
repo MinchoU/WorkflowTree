@@ -152,6 +152,12 @@
   .st-active{background:var(--active-fill);color:#3d7a14}
   .st-done{background:var(--done-fill);color:#69737f}
   .status-row button.on{border-color:rgba(0,0,0,.28)}
+  .delay-row{display:flex;gap:6px;align-items:center}
+  .delay-row input{width:50px;flex:0 0 50px;border:1px solid var(--line);border-radius:8px;padding:7px 6px;font-size:13px;font-family:inherit;text-align:center;background:#fbfcfe}
+  .delay-row input:focus{outline:none;border-color:var(--accent);background:#fff}
+  .delay-row button{flex:1;padding:7px 4px;border:1px solid var(--line);background:#fff;border-radius:8px;cursor:pointer;font-size:12px;color:#374151;white-space:nowrap}
+  .delay-row button:hover{border-color:var(--accent);color:var(--accent)}
+  .delay-row #delayApply{flex:0 0 auto;font-weight:600}
   .danger{background:#fff;border:1px solid #f3c2c2;color:#d2453d;border-radius:9px;padding:10px;cursor:pointer;font-weight:600;font-size:13px}
   .danger:hover{background:#ffeaea}
   .placeholder{color:#9aa5b3;font-size:13.5px;line-height:1.6;padding:6px 2px}
@@ -449,6 +455,16 @@ function renderInspector(){
           <button class="st-done" data-gst="done">Done</button>
         </div>
       </div>
+      <div class="field"><label>Delay expected dates <span class="sub">days · − = earlier</span></label>
+        <div class="delay-row">
+          <button data-delay="-7">−7d</button>
+          <button data-delay="-1">−1d</button>
+          <input id="delayDays" type="number" value="7">
+          <button id="delayApply">Apply</button>
+          <button data-delay="1">+1d</button>
+          <button data-delay="7">+7d</button>
+        </div>
+      </div>
       <button class="danger" id="delSel">🗑  Delete ${selSet.size} tasks</button>`;
     body.querySelectorAll(".status-row button").forEach(b=>{
       b.onclick=()=>{ snapshot(); const st=b.dataset.gst;
@@ -456,6 +472,12 @@ function renderInspector(){
           if(st==='active') nn.startDate=todayISO(); if(st==='done') nn.endDate=todayISO(); });
         touch(); renderCanvas(); };
     });
+    body.querySelectorAll(".delay-row button[data-delay]").forEach(b=>{
+      b.onclick=()=>delaySelected(parseInt(b.dataset.delay,10));
+    });
+    document.getElementById("delayApply").onclick=()=>{
+      delaySelected(parseInt(document.getElementById("delayDays").value,10)||0);
+    };
     document.getElementById("delSel").onclick=deleteSelected;
     return;
   }
@@ -589,6 +611,19 @@ function deleteSelected(){
   p.nodes=p.nodes.filter(n=>!selSet.has(n.id));
   p.edges=p.edges.filter(e=>!selSet.has(e.from)&&!selSet.has(e.to));
   clearSel(); touch(); renderCanvas(); renderInspector();
+}
+function shiftDate(iso, days){          // yyyy-mm-dd shifted by N days (TZ-safe)
+  const [y,m,d]=iso.split("-").map(Number);
+  const dt=new Date(y, m-1, d+days);
+  return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
+}
+function delaySelected(days){           // shift every selected card's expected date by the same amount
+  const p=cur(); if(!p||selSet.size===0||!days) return;
+  let n=0;
+  snapshot();
+  selSet.forEach(id=>{ const nd=byId(id); if(nd&&nd.date){ nd.date=shiftDate(nd.date,days); n++; } });
+  if(n===0){ undoStack.pop(); alert("None of the selected cards have an expected date to shift."); return; }
+  touch(); renderCanvas(); renderInspector();
 }
 
 /* ---------------- sort / auto-layout ----------------
