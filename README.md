@@ -7,6 +7,8 @@ dependencies — all in a native window. No accounts, no cloud, no browser requi
 The whole app is a single `index.html` (vanilla JS + SVG) wrapped in a tiny native
 **WKWebView** app, so it runs as a real macOS app and stores everything locally.
 
+![WorkflowTree](docs/screenshot.png)
+
 ---
 
 ## Features
