@@ -173,6 +173,10 @@ static NSString *mimeType(NSString *ext) {
 
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
+        // Force English (UK) locale so <input type="date"> shows dd/mm/yyyy in English
+        // instead of following the system (e.g. Korean "연도. 월. 일.").
+        [[NSUserDefaults standardUserDefaults] setObject:@[@"en-GB"] forKey:@"AppleLanguages"];
+
         NSApplication *app = [NSApplication sharedApplication];
         [app setActivationPolicy:NSApplicationActivationPolicyRegular];
         AppDelegate *del = [AppDelegate new];
