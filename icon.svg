@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f4f9ff"/>
+      <stop offset="1" stop-color="#e1ebf8"/>
+    </linearGradient>
+    <linearGradient id="grn" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#aee268"/>
+      <stop offset="1" stop-color="#6fbb2c"/>
+    </linearGradient>
+    <linearGradient id="blu" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#79c0f6"/>
+      <stop offset="1" stop-color="#3f93e6"/>
+    </linearGradient>
+    <filter id="sh" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="14" stdDeviation="20" flood-color="#173a5e" flood-opacity="0.20"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" rx="232" fill="url(#bg)"/>
+
+  <!-- arrow: green → blue -->
+  <g filter="url(#sh)">
+    <path d="M450 512 H560" fill="none" stroke="#4a6b86" stroke-width="34" stroke-linecap="round"/>
+    <path d="M548 470 L612 512 L548 554 Z" fill="#4a6b86"/>
+  </g>
+
+  <!-- green box -->
+  <rect x="132" y="372" width="280" height="280" rx="78" fill="url(#grn)" filter="url(#sh)"/>
+  <!-- blue box -->
+  <rect x="612" y="372" width="280" height="280" rx="78" fill="url(#blu)" filter="url(#sh)"/>
+</svg>

@@ -1,0 +1,10 @@
+# compiled native binary (rebuilt by build.sh)
+native/WorkflowTree
+*.o
+
+# user data / backups
+*backup*.json
+recover*.json
+
+# macOS
+.DS_Store

@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>WorkflowTree</title>
+<link rel="icon" type="image/svg+xml" href="icon.svg" />
+<style>
+  :root{
+    --bg:#f5f7fb; --panel:#ffffff; --line:#e3e8f0; --ink:#1f2937; --muted:#8a93a3;
+    --todo-fill:#cfeaff; --todo-stroke:#4ea8ef;
+    --active-fill:#d8f2a6; --active-stroke:#76c23a;
+    --done-fill:#e4e7ec; --done-stroke:#aab2bf;
+    --accent:#4ea8ef;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    display:flex;font-family:"Apple SD Gothic Neo","AppleSDGothicNeo-Regular",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    color:var(--ink);background:var(--bg);overflow:hidden;
+    -webkit-font-smoothing:antialiased;letter-spacing:-.1px;
+  }
+
+  /* ---------- left sidebar ---------- */
+  #sidebar{width:230px;flex:0 0 230px;background:var(--panel);border-right:1px solid var(--line);
+    display:flex;flex-direction:column;}
+  #sidebar h1{font-size:15px;margin:0;padding:16px 16px 10px;letter-spacing:.3px;display:flex;align-items:center;gap:8px}
+  #sidebar h1 .logo{width:24px;height:24px;border-radius:7px;display:block}
+  .side-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;padding:6px 16px}
+  .search-wrap{padding:2px 12px 6px}
+  #searchBox{width:100%;border:1px solid var(--line);border-radius:9px;padding:8px 11px;font-size:13px;
+    font-family:inherit;color:var(--ink);background:#fbfcfe;outline:none}
+  #searchBox:focus{border-color:var(--accent);background:#fff}
+  #searchResults{max-height:210px;overflow:auto;margin-top:4px}
+  .sr{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:8px;cursor:pointer}
+  .sr:hover{background:#eef4fc}
+  .sr .dot{width:9px;height:9px;border-radius:50%;flex:0 0 9px;background:#7fc3f2}
+  .sr .dot.active{background:#8ed24a}
+  .sr .dot.done{background:#aab2bf}
+  .sr .srn{font-size:13px;color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sr-none{padding:7px 10px;color:#9aa5b3;font-size:12.5px}
+  #projList{flex:1;overflow:auto;padding:0 8px}
+  .proj{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:9px;cursor:pointer;font-size:13.5px;color:#374151}
+  .proj:hover{background:#f1f5fb}
+  .proj.active{background:#e8f3ff;color:#1567c2;font-weight:600}
+  .proj .dot{width:8px;height:8px;border-radius:50%;background:#c3ccd9;flex:0 0 8px}
+  .proj.active .dot{background:var(--accent)}
+  .proj .pname{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .proj .edit,.proj .x{opacity:0;font-size:13px;padding:0 3px;border-radius:4px;line-height:1}
+  .proj:hover .edit,.proj:hover .x{opacity:.85}
+  .proj .edit:hover{background:#e8eefb;opacity:1}
+  .proj .x{color:var(--muted);font-size:14px}
+  .proj .x:hover{background:#ffe1e1;color:#d23;opacity:1}
+  #addProj{margin:8px;padding:9px;border:1px dashed #c7d0dd;background:transparent;border-radius:9px;
+    color:#5b677a;cursor:pointer;font-size:13px}
+  #addProj:hover{border-color:var(--accent);color:var(--accent)}
+  .side-foot{margin:0 8px 10px;padding:9px;border:1px solid var(--line);background:#fff;border-radius:9px;color:#5b677a;cursor:pointer;font-size:13px}
+  .side-foot:hover{border-color:var(--accent);color:var(--accent)}
+  .side-io{display:flex;gap:8px;margin:0 8px 8px}
+  .side-io button{flex:1;padding:8px;border:1px solid var(--line);background:#fff;border-radius:9px;color:#5b677a;cursor:pointer;font-size:12.5px}
+  .side-io button:hover{border-color:var(--accent);color:var(--accent)}
+  .overlay{position:fixed;inset:0;background:rgba(20,30,50,.42);display:none;align-items:center;justify-content:center;z-index:100}
+  .overlay.show{display:flex}
+  .modal{background:#fff;border-radius:16px;padding:20px 24px;width:470px;max-width:90vw;box-shadow:0 24px 64px rgba(0,0,0,.3)}
+  .modal-h{font-size:16px;font-weight:700;display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+  .modal-h span{cursor:pointer;color:var(--muted);font-size:18px;padding:2px 7px;border-radius:7px}
+  .modal-h span:hover{background:#f1f5fb;color:#333}
+  ul.hk{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px}
+  ul.hk li{font-size:13.5px;color:#4a5567;line-height:1.4}
+  ul.hk b{color:#1f2937;font-weight:600}
+
+  /* ---------- canvas ---------- */
+  #canvasWrap{flex:1;position:relative;overflow:hidden}
+  svg#canvas{width:100%;height:100%;display:block;cursor:grab}
+  svg#canvas.panning{cursor:grabbing}
+  svg#canvas.grab{cursor:grab}
+  .node{cursor:pointer}
+  .node-inner{transition:transform .12s ease; filter:drop-shadow(0 3px 5px rgba(40,55,80,.13));}
+  .node:hover .node-inner{transform:scale(1.08)}
+  .node.sel .node-inner{filter:drop-shadow(0 4px 9px rgba(78,168,239,.45))}
+  .node .nlabel{
+    width:100%;height:100%;display:flex;align-items:center;justify-content:center;text-align:center;
+    font-size:13px;line-height:1.2;color:#243; padding:2px;overflow:hidden;
+    font-family:"Apple SD Gothic Neo",-apple-system,BlinkMacSystemFont,sans-serif;
+    word-break:break-word;pointer-events:none;
+  }
+  .node .nlabel .ph{color:#9bb0c4;font-style:italic}
+  .node .ntext{max-width:100%;overflow:hidden}
+  .node .ntext div{min-height:1em}
+  .node .date{font-size:12px;fill:#5b677a;font-weight:600;pointer-events:none}
+  .node.done .nlabel{color:#9099a6;text-decoration:line-through}
+  .node.done .date{fill:#aab2bf;text-decoration:line-through}
+  .node .handle{fill:#fff;stroke:var(--accent);stroke-width:2;opacity:0;cursor:crosshair;transition:opacity .1s}
+  .node:hover .handle,.node.sel .handle{opacity:1}
+  .node .inhandle{fill:var(--accent);stroke:#fff;stroke-width:2;opacity:0;pointer-events:none;transition:opacity .1s}
+  .node:hover .inhandle,.node.sel .inhandle{opacity:1}
+  .node .rhandle{fill:#fff;stroke:#9aa5b3;stroke-width:2;opacity:0;cursor:ew-resize;transition:opacity .1s}
+  .node:hover .rhandle,.node.sel .rhandle{opacity:1}
+  .edge{fill:none;stroke:#9fb1c6;stroke-width:2.4}
+  .edge-hit{fill:none;stroke:transparent;stroke-width:16;cursor:pointer}
+  .edge.sel{stroke:var(--accent);stroke-width:3.2}
+  #tempLink{fill:none;stroke:var(--accent);stroke-width:2.4;stroke-dasharray:5 4;pointer-events:none}
+  .guide{stroke:#ff6fb1;stroke-width:1.2;stroke-dasharray:5 5;opacity:.85;pointer-events:none;vector-effect:non-scaling-stroke}
+  #marquee{fill:rgba(78,168,239,.12);stroke:var(--accent);stroke-width:1.4;stroke-dasharray:5 4;vector-effect:non-scaling-stroke;pointer-events:none;display:none}
+  #marquee.show{display:block}
+  #emptyHint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    color:#aab4c2;font-size:15px;pointer-events:none;text-align:center}
+
+  /* ---------- right inspector ---------- */
+  #inspector{width:310px;flex:0 0 310px;background:var(--panel);border-left:1px solid var(--line);
+    display:flex;flex-direction:column;overflow:auto}
+  .toolbar{padding:14px;border-bottom:1px solid var(--line);display:flex;gap:8px}
+  .btn{flex:1;padding:10px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer;
+    font-size:13px;font-weight:600;color:#374151;display:flex;align-items:center;justify-content:center;gap:6px}
+  .btn:hover{border-color:var(--accent);color:var(--accent)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary:hover{filter:brightness(1.05);color:#fff}
+  .insp-body{padding:16px;display:flex;flex-direction:column;gap:14px}
+  .field{display:flex;flex-direction:column;gap:6px}
+  .field label{font-size:11px;color:var(--muted);letter-spacing:.3px;font-weight:700}
+  .field label .sub{font-weight:600;color:#b3bccb;text-transform:none}
+  .dates{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .field input,.field textarea{border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-size:14px;
+    font-family:inherit;color:var(--ink);background:#fbfcfe;resize:vertical}
+  .field input:focus,.field textarea:focus{outline:none;border-color:var(--accent);background:#fff}
+  .field textarea{min-height:120px}
+  .rt-toolbar{display:flex;gap:6px;align-items:center;margin-bottom:7px}
+  .rt-toolbar button{width:30px;height:30px;border:1px solid var(--line);background:#fff;border-radius:7px;cursor:pointer;font-size:14px;padding:0;color:#374151}
+  .rt-toolbar button:hover{border-color:var(--accent);color:var(--accent)}
+  .rt-toolbar input[type=color]{width:30px;height:30px;border:1px solid var(--line);border-radius:7px;padding:2px;background:#fff;cursor:pointer}
+  .rt-edit{border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-size:14px;min-height:42px;background:#fbfcfe;color:var(--ink);outline:none;line-height:1.35;word-break:break-word}
+  .rt-edit:focus{border-color:var(--accent);background:#fff}
+  .rt-edit:empty:before{content:attr(data-ph);color:#9aa5b3}
+  .status-row{display:flex;gap:7px}
+  .status-row button{flex:1;padding:9px 4px;border-radius:9px;border:2px solid transparent;cursor:pointer;
+    font-size:12px;font-weight:700}
+  .st-todo{background:var(--todo-fill);color:#1c6aa8}
+  .st-active{background:var(--active-fill);color:#3d7a14}
+  .st-done{background:var(--done-fill);color:#69737f}
+  .status-row button.on{border-color:rgba(0,0,0,.28)}
+  .danger{background:#fff;border:1px solid #f3c2c2;color:#d2453d;border-radius:9px;padding:10px;cursor:pointer;font-weight:600;font-size:13px}
+  .danger:hover{background:#ffeaea}
+  .placeholder{color:#9aa5b3;font-size:13.5px;line-height:1.6;padding:6px 2px}
+  .placeholder b{color:#5b677a}
+  .hintkey{background:#eef2f8;border-radius:5px;padding:1px 6px;font-size:12px;color:#5b677a}
+</style>
+</head>
+<body>
+  <aside id="sidebar">
+    <h1><img class="logo" src="icon.svg" alt="" /> WorkflowTree</h1>
+    <div class="search-wrap">
+      <input id="searchBox" type="text" placeholder="🔍  Search tasks...">
+      <div id="searchResults"></div>
+    </div>
+    <div class="side-label">Projects</div>
+    <div id="projList"></div>
+    <button id="addProj">＋ New project</button>
+    <div class="side-io">
+      <button id="exportBtn">⬇ Export</button>
+      <button id="importBtn">⬆ Import</button>
+    </div>
+    <button id="hotkeysBtn" class="side-foot">⌨ See hotkeys</button>
+    <input type="file" id="importFile" accept="application/json,.json" style="display:none">
+  </aside>
+
+  <div id="canvasWrap">
+    <svg id="canvas">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7.5" markerHeight="7.5" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#9fb1c6"/>
+        </marker>
+        <pattern id="dots" width="26" height="26" patternUnits="userSpaceOnUse">
+          <circle cx="1.4" cy="1.4" r="1.4" fill="#dde4ee"/>
+        </pattern>
+      </defs>
+      <rect id="grid" x="-100000" y="-100000" width="200000" height="200000" fill="url(#dots)"/>
+      <g id="edgeLayer"></g>
+      <path id="tempLink"></path>
+      <g id="guideLayer"></g>
+      <g id="nodeLayer"></g>
+      <rect id="marquee" x="0" y="0" width="0" height="0"></rect>
+    </svg>
+    <div id="emptyHint"></div>
+  </div>
+
+  <aside id="inspector">
+    <div class="toolbar">
+      <button class="btn primary" id="addTask">＋ Add new task</button>
+      <button class="btn" id="sortBtn" title="Sort by date / arrow order">⇄ Sort</button>
+    </div>
+    <div class="insp-body" id="inspBody"></div>
+  </aside>
+
+  <div id="hkOverlay" class="overlay">
+    <div class="modal">
+      <div class="modal-h">Keyboard &amp; Mouse <span id="hkClose">✕</span></div>
+      <ul class="hk">
+        <li><b>＋ Add new task</b> — create a card</li>
+        <li><b>Drag empty space</b> — marquee-select multiple cards</li>
+        <li><b>Drag a selected card</b> — move the whole selection together</li>
+        <li><b>Shift + drag</b> — snap to another card's center</li>
+        <li><b>Drag blue dot → another card</b> — connect with an arrow</li>
+        <li><b>Drag gray dot (bottom-right)</b> — resize width</li>
+        <li><b>⌥ Option + drag</b> — duplicate a card</li>
+        <li><b>Click a card, then Shift + C + click another</b> — swap their positions</li>
+        <li><b>Delete</b> — remove the selected card(s) / arrow</li>
+        <li><b>⌘Z / Ctrl + Z</b> — undo (last 5 actions)</li>
+        <li><b>Space + drag</b> or <b>middle-mouse drag</b> — pan &nbsp;·&nbsp; <b>Scroll</b> — zoom</li>
+        <li><b>⇄ Sort</b> — auto-layout by arrows &amp; dates</li>
+        <li><b>Esc</b> — close this dialog</li>
+      </ul>
+    </div>
+  </div>
+
+<script>
+const R = 46;                         // node radius
+const STORAGE_KEY = "workflowtree.v1";
+const COLORS = {
+  todo:  {fill:"var(--todo-fill)",  stroke:"#4ea8ef", sel:"#1567c2"},
+  active:{fill:"var(--active-fill)",stroke:"#76c23a", sel:"#4f9c1a"},
+  done:  {fill:"var(--done-fill)",  stroke:"#aab2bf", sel:"#7a8492"},
+};
+
+const svg      = document.getElementById("canvas");
+const nodeLayer= document.getElementById("nodeLayer");
+const edgeLayer= document.getElementById("edgeLayer");
+const tempLink = document.getElementById("tempLink");
+const guideLayer=document.getElementById("guideLayer");
+
+/* 텍스트 측정 → 글자가 넘치면 원을 자동으로 키움(글자 크기는 고정) */
+const measEl=document.createElement("div");
+measEl.style.cssText="position:absolute;left:-99999px;top:0;visibility:hidden;box-sizing:border-box;padding:2px;"+
+  "font-family:'Apple SD Gothic Neo',-apple-system,sans-serif;font-size:13px;line-height:1.2;text-align:center;word-break:break-word;";
+document.body.appendChild(measEl);
+let dims={};                               // id -> {w,h}
+const fitCache={};
+function nodeW(n){ return n.w || (n.r? Math.round(n.r*2.7) : 150); }
+function fitDims(n){
+  const w=nodeW(n);
+  const html=(n.name && n.name.replace(/<[^>]*>/g,"").trim()!=="") ? n.name : "task";
+  const key=w+"|"+html;
+  const c=fitCache[n.id];
+  if(c && c.k===key) return c.v;
+  measEl.style.width=(w-18)+"px";          // 글자 크기 고정, 기본은 정사각(h=w), 글자 넘치면 세로로만 확장
+  measEl.innerHTML=html;
+  const v={ w, h:Math.max(w, measEl.scrollHeight+16) };
+  fitCache[n.id]={k:key,v};
+  return v;
+}
+function getDims(n){ return dims[n.id]||fitDims(n); }
+const emptyHint= document.getElementById("emptyHint");
+
+let state = load() || { projects:[], currentId:null };
+let view  = { x:0, y:0, w:1000, h:700 };   // svg viewBox (in world units)
+let selNode = null, selEdge = null;
+let selSet = new Set();                 // 다중 선택된 카드 id 집합
+let spaceHeld = false;                  // Space+드래그 = 패닝
+function selectOnly(id){ selSet=new Set(id?[id]:[]); selNode=id||null; selEdge=null; }
+function clearSel(){ selSet=new Set(); selNode=null; selEdge=null; }
+
+/* ---------------- persistence ---------------- */
+function load(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)); }catch(e){ return null; } }
+let saveTimer=null;
+function save(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+},120); }
+function uid(){ return Math.random().toString(36).slice(2,9)+Date.now().toString(36).slice(-3); }
+function todayISO(){ const d=new Date(); const local=new Date(d.getTime()-d.getTimezoneOffset()*60000); return local.toISOString().slice(0,10); }
+function esc(s){ return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function byId(id){ const p=cur(); return p && p.nodes.find(n=>n.id===id); }
+function cur(){ return state.projects.find(p=>p.id===state.currentId); }
+function touch(){ const p=cur(); if(p) p.updatedAt=Date.now(); save(); }
+
+/* ---------------- undo (최근 5 작업) ---------------- */
+let undoStack=[]; const UNDO_MAX=5;
+function snapshot(){
+  const p=cur(); if(!p) return;
+  undoStack.push(JSON.stringify({id:p.id, nodes:p.nodes, edges:p.edges}));
+  if(undoStack.length>UNDO_MAX) undoStack.shift();
+}
+function undo(){
+  const snap=undoStack.pop(); if(!snap) return;
+  const data=JSON.parse(snap);
+  const p=state.projects.find(x=>x.id===data.id); if(!p) return;
+  state.currentId=data.id; p.nodes=data.nodes; p.edges=data.edges;
+  clearSel(); touch(); render();
+}
+let editStarted=false;                       // 텍스트 필드 편집 1회당 스냅샷 1개
+function markEdit(){ if(!editStarted){ snapshot(); editStarted=true; } }
+
+/* ---------------- bootstrap ---------------- */
+function ensureProject(){
+  if(state.projects.length===0){
+    const p={id:uid(),name:"My Workflow",nodes:[],edges:[],updatedAt:Date.now()};
+    state.projects.push(p); state.currentId=p.id;
+  }
+  if(!cur()){
+    // open most-recently edited
+    const sorted=[...state.projects].sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+    state.currentId=sorted[0].id;
+  }
+}
+
+/* ---------------- view / coords ---------------- */
+function applyView(){ svg.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${view.h}`); }
+function centerOn(n){ view.x=n.x-view.w/2; view.y=n.y-view.h/2; applyView(); }
+function initView(){
+  const r=svg.getBoundingClientRect();
+  view.w=r.width||1000; view.h=r.height||700;
+  fitView();
+}
+function fitView(){
+  const p=cur();
+  const r=svg.getBoundingClientRect();
+  const aspect=(r.width||1000)/(r.height||700);
+  if(!p || p.nodes.length===0){
+    view.w= r.width||1000; view.h=view.w/aspect;
+    view.x=-view.w/2; view.y=-view.h/2; applyView(); return;
+  }
+  let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9;
+  p.nodes.forEach(n=>{ minX=Math.min(minX,n.x); minY=Math.min(minY,n.y);
+                       maxX=Math.max(maxX,n.x); maxY=Math.max(maxY,n.y); });
+  const pad=120;
+  minX-=pad;minY-=pad;maxX+=pad;maxY+=pad;
+  let w=maxX-minX, h=maxY-minY;
+  if(w/h>aspect) h=w/aspect; else w=h*aspect;
+  const cx=(minX+maxX)/2, cy=(minY+maxY)/2;
+  view.w=w; view.h=h; view.x=cx-w/2; view.y=cy-h/2; applyView();
+}
+function toWorld(evt){
+  const pt=svg.createSVGPoint(); pt.x=evt.clientX; pt.y=evt.clientY;
+  const m=svg.getScreenCTM().inverse(); const p=pt.matrixTransform(m);
+  return {x:p.x,y:p.y};
+}
+
+/* ---------------- rendering ---------------- */
+function render(){ renderSidebar(); renderCanvas(); renderInspector(); }
+
+function renderSidebar(){
+  const list=document.getElementById("projList"); list.innerHTML="";
+  state.projects.forEach(p=>{
+    const el=document.createElement("div");
+    el.className="proj"+(p.id===state.currentId?" active":"");
+    el.innerHTML=`<span class="dot"></span><span class="pname">${esc(p.name)}</span>`+
+      `<span class="edit" data-edit="1" title="Rename">✏️</span>`+
+      `<span class="x" data-x="1" title="Delete">✕</span>`;
+    el.onclick=(e)=>{
+      if(e.target.dataset.x){ deleteProject(p.id); return; }
+      if(e.target.dataset.edit){ renameProject(p); return; }
+      openProject(p.id);
+    };
+    el.querySelector(".pname").ondblclick=()=>renameProject(p);
+    list.appendChild(el);
+  });
+}
+
+function fmtDate(iso){
+  if(!iso) return "";
+  const d=new Date(iso+"T00:00:00");
+  if(isNaN(d)) return iso;
+  return d.toLocaleDateString("en-US",{month:"short",day:"numeric"});
+}
+
+function edgeD(a,b){
+  const da=getDims(a), db=getDims(b);
+  const sx=a.x+da.w/2, sy=a.y;              // 나가는 쪽: 항상 출발 카드의 오른쪽 변
+  const ex=b.x-db.w/2-7, ey=b.y;            // 받는 쪽: 항상 대상 카드의 왼쪽 변
+  const co=Math.max(45, Math.abs(ex-sx)*0.5);
+  return `M ${sx} ${sy} C ${sx+co} ${sy}, ${ex-co} ${ey}, ${ex} ${ey}`;
+}
+
+function renderCanvas(){
+  const p=cur();
+  dims={}; (p?.nodes||[]).forEach(n=>{ dims[n.id]=fitDims(n); });
+  emptyHint.style.display = (p && p.nodes.length) ? "none":"flex";
+  emptyHint.innerHTML = "Click <b style='color:#5b677a'>＋ Add new task</b> on the right<br>to create your first task";
+  // edges
+  let eh="";
+  (p?.edges||[]).forEach(e=>{
+    const a=byId(e.from), b=byId(e.to); if(!a||!b) return;
+    const d=edgeD(a,b);
+    eh+=`<path class="edge ${e.id===selEdge?'sel':''}" d="${d}" marker-end="url(#arrow)"></path>`;
+    eh+=`<path class="edge-hit" data-edge="${e.id}" d="${d}"></path>`;
+  });
+  edgeLayer.innerHTML=eh;
+  // nodes
+  let nh="";
+  (p?.nodes||[]).forEach(n=>{
+    const c=COLORS[n.status]||COLORS.todo;
+    const seld=selSet.has(n.id);
+    const {w,h}=getDims(n); const hw=w/2, hh=h/2;
+    const date=n.date?`<text class="date" x="0" y="${-hh-11}" text-anchor="middle">${esc(fmtDate(n.date))}</text>`:"";
+    const hasName=n.name && n.name.replace(/<[^>]*>/g,"").trim()!=="";
+    const label=hasName?`<div class="ntext">${n.name}</div>`:`<span class="ph">task</span>`;
+    nh+=`<g class="node ${n.status} ${seld?'sel':''}" data-node="${n.id}" transform="translate(${n.x},${n.y})">
+      <g class="node-inner">
+        ${date}
+        <rect class="bg" x="${-hw}" y="${-hh}" width="${w}" height="${h}" rx="15" ry="15" fill="${c.fill}" stroke="${seld?c.sel:c.stroke}" stroke-width="${seld?4:2.6}"></rect>
+        <foreignObject x="${-hw+8}" y="${-hh+6}" width="${w-16}" height="${h-12}">
+          <div xmlns="http://www.w3.org/1999/xhtml" class="nlabel">${label}</div>
+        </foreignObject>
+        <circle class="inhandle" cx="${-hw}" cy="0" r="6"></circle>
+        <circle class="handle" data-handle="${n.id}" cx="${hw}" cy="0" r="7"></circle>
+        <circle class="rhandle" data-resize="${n.id}" cx="${hw}" cy="${hh}" r="7"></circle>
+      </g>
+    </g>`;
+  });
+  nodeLayer.innerHTML=nh;
+}
+
+function renderInspector(){
+  const body=document.getElementById("inspBody");
+  const n=selNode?byId(selNode):null;
+
+  if(selSet.size>1){
+    body.innerHTML=`<div class="placeholder"><b>${selSet.size} tasks</b> selected.<br>
+      Drag any one to move them together (Shift = snap).</div>
+      <div class="field"><label>Set status for all</label>
+        <div class="status-row">
+          <button class="st-todo" data-gst="todo">Todo</button>
+          <button class="st-active" data-gst="active">Active</button>
+          <button class="st-done" data-gst="done">Done</button>
+        </div>
+      </div>
+      <button class="danger" id="delSel">🗑  Delete ${selSet.size} tasks</button>`;
+    body.querySelectorAll(".status-row button").forEach(b=>{
+      b.onclick=()=>{ snapshot(); const st=b.dataset.gst;
+        selSet.forEach(id=>{ const nn=byId(id); if(!nn) return; nn.status=st;
+          if(st==='active') nn.startDate=todayISO(); if(st==='done') nn.endDate=todayISO(); });
+        touch(); renderCanvas(); };
+    });
+    document.getElementById("delSel").onclick=deleteSelected;
+    return;
+  }
+  if(selEdge && !n){
+    body.innerHTML=`<div class="placeholder">Connection (arrow) selected.</div>
+      <button class="danger" id="delEdge">🗑  Delete connection</button>`;
+    document.getElementById("delEdge").onclick=()=>{ const p=cur(); snapshot(); p.edges=p.edges.filter(e=>e.id!==selEdge); selEdge=null; touch(); renderCanvas(); renderInspector(); };
+    return;
+  }
+  if(!n){
+    body.innerHTML=`<div class="placeholder">
+      Click a task card to edit its <b>name, dates, and notes</b> here.<br><br>
+      • Drag empty space to <b>marquee-select</b> several cards<br>
+      • Drag a selected card to move the whole group (Shift = snap)<br>
+      • Drag the blue dot to another card to <b>connect with an arrow</b><br>
+      • Drag the gray dot (bottom-right) to <b>resize width</b><br>
+      • Option(⌥) drag = duplicate &nbsp;·&nbsp; Space+drag = pan<br>
+      • Press <span class="hintkey">Delete</span> to remove the selection
+    </div>`;
+    return;
+  }
+  body.innerHTML=`
+    <div class="field"><label>Status</label>
+      <div class="status-row">
+        <button class="st-todo ${n.status==='todo'?'on':''}"   data-st="todo">Todo</button>
+        <button class="st-active ${n.status==='active'?'on':''}" data-st="active">Active</button>
+        <button class="st-done ${n.status==='done'?'on':''}"   data-st="done">Done</button>
+      </div>
+    </div>
+    <div class="field"><label>Task name <span class="sub">bold · italic · underline · color · line break (Enter)</span></label>
+      <div class="rt-toolbar">
+        <button type="button" data-cmd="bold" title="Bold"><b>B</b></button>
+        <button type="button" data-cmd="italic" title="Italic"><i>I</i></button>
+        <button type="button" data-cmd="underline" title="Underline"><u>U</u></button>
+        <input type="color" id="fColor" value="#243240" title="Text color">
+      </div>
+      <div id="fName" class="rt-edit" contenteditable="true" data-ph="Task name"></div></div>
+    <div class="field"><label>Expected date <span class="sub">(shown on card)</span></label>
+      <input id="fDate" type="date" value="${esc(n.date||"")}"></div>
+    <div class="dates">
+      <div class="field"><label>Created</label>
+        <input id="fCreated" type="date" value="${esc(n.created||"")}"></div>
+      <div class="field"><label>Start <span class="sub">Active</span></label>
+        <input id="fStart" type="date" value="${esc(n.startDate||"")}"></div>
+      <div class="field"><label>End <span class="sub">Done</span></label>
+        <input id="fEnd" type="date" value="${esc(n.endDate||"")}"></div>
+    </div>
+    <div class="field"><label>Width <span class="sub">(height auto)</span></label>
+      <input id="fSize" type="range" min="36" max="440" value="${nodeW(n)}"></div>
+    <div class="field"><label>Notes</label>
+      <textarea id="fNotes" placeholder="Write notes...">${esc(n.notes||"")}</textarea></div>
+    <button class="danger" id="delNode">🗑  Delete task</button>
+  `;
+  body.querySelectorAll(".status-row button").forEach(b=>{
+    b.onclick=()=>{
+      snapshot();
+      n.status=b.dataset.st;
+      if(b.dataset.st==='active') n.startDate=todayISO();   // 마지막으로 Active 누른 날
+      if(b.dataset.st==='done')   n.endDate=todayISO();     // 마지막으로 Done 누른 날
+      touch(); renderCanvas(); renderInspector();
+    };
+  });
+  const fName=document.getElementById("fName");
+  fName.innerHTML=n.name||"";
+  const syncName=()=>{ markEdit(); n.name=fName.innerHTML; touch(); renderCanvas(); };
+  let savedRange=null;
+  fName.addEventListener("focus",()=>{ editStarted=false; });
+  fName.addEventListener("input",syncName);
+  fName.addEventListener("blur",()=>{ const s=getSelection(); if(s.rangeCount && fName.contains(s.anchorNode)) savedRange=s.getRangeAt(0).cloneRange(); });
+  body.querySelectorAll(".rt-toolbar button").forEach(b=>{
+    b.addEventListener("mousedown",e=>e.preventDefault());   // 선택 유지
+    b.onclick=()=>{ fName.focus(); document.execCommand(b.dataset.cmd); syncName(); };
+  });
+  document.getElementById("fColor").oninput=(ev)=>{
+    fName.focus();
+    if(savedRange){ const s=getSelection(); s.removeAllRanges(); s.addRange(savedRange); }
+    document.execCommand("styleWithCSS",false,true);
+    document.execCommand("foreColor",false,ev.target.value);
+    syncName();
+  };
+  document.getElementById("fDate").oninput   =(e)=>{ markEdit(); n.date=e.target.value;      touch(); renderCanvas(); };
+  document.getElementById("fCreated").oninput=(e)=>{ markEdit(); n.created=e.target.value;   touch(); };
+  document.getElementById("fStart").oninput  =(e)=>{ markEdit(); n.startDate=e.target.value; touch(); };
+  document.getElementById("fEnd").oninput    =(e)=>{ markEdit(); n.endDate=e.target.value;   touch(); };
+  document.getElementById("fSize").oninput   =(e)=>{ markEdit(); n.w=+e.target.value;        touch(); renderCanvas(); };
+  document.getElementById("fNotes").oninput  =(e)=>{ markEdit(); n.notes=e.target.value;     touch(); };
+  body.querySelectorAll("input,textarea").forEach(el=>el.addEventListener("focus",()=>{ editStarted=false; }));
+  document.getElementById("delNode").onclick=()=>deleteNode(n.id);
+}
+
+/* ---------------- actions ---------------- */
+function renameProject(p){
+  const nn=prompt("Rename project", p.name);
+  if(nn!=null){ p.name=nn.trim()||p.name; touch(); renderSidebar(); }
+}
+function openProject(id){ state.currentId=id; clearSel(); undoStack=[];
+  const sb=document.getElementById("searchBox"); if(sb){ sb.value=""; document.getElementById("searchResults").innerHTML=""; }
+  save(); render(); fitView(); }
+function addProject(){
+  const name=prompt("Project name","New Workflow"); if(name===null) return;
+  const p={id:uid(),name:name.trim()||"Untitled",nodes:[],edges:[],updatedAt:Date.now()};
+  state.projects.push(p); openProject(p.id);
+}
+function deleteProject(id){
+  const p=state.projects.find(x=>x.id===id); if(!p) return;
+  if(!confirm(`Delete project "${p.name}"?`)) return;
+  state.projects=state.projects.filter(x=>x.id!==id);
+  if(state.currentId===id){ state.currentId=null; ensureProject(); }
+  save(); render(); fitView();
+}
+let addOffset=0;
+function addTask(){
+  const p=cur(); if(!p) return;
+  snapshot();
+  const cx=view.x+view.w/2, cy=view.y+view.h/2;
+  const off=(addOffset++ %5)*26;
+  const n={id:uid(),name:"",date:"",created:todayISO(),startDate:"",endDate:"",notes:"",status:"todo",w:120,x:cx+off-60,y:cy+off-60};
+  p.nodes.push(n); selectOnly(n.id); touch();
+  renderCanvas(); renderInspector();
+  const f=document.getElementById("fName"); if(f) f.focus();
+}
+function deleteNode(id){
+  const p=cur(); snapshot(); p.nodes=p.nodes.filter(n=>n.id!==id);
+  p.edges=p.edges.filter(e=>e.from!==id&&e.to!==id);
+  selSet.delete(id); if(selNode===id) selNode=null;
+  touch(); renderCanvas(); renderInspector();
+}
+function deleteSelected(){
+  const p=cur(); if(!p||selSet.size===0) return;
+  snapshot();
+  p.nodes=p.nodes.filter(n=>!selSet.has(n.id));
+  p.edges=p.edges.filter(e=>!selSet.has(e.from)&&!selSet.has(e.to));
+  clearSel(); touch(); renderCanvas(); renderInspector();
+}
+
+/* ---------------- sort / auto-layout ----------------
+   - 화살표(선후관계)가 컬럼(좌→우)을 결정: A→B면 B는 A 오른쪽 컬럼.
+     화살표가 있으면 같은 날짜라도 옆으로 → 한 날짜가 여러 컬럼을 차지할 수 있음.
+   - 예상 날짜는 최소 컬럼을 정함(빠를수록 왼쪽).
+   - 체인은 같은 행(가로 평행), 여러 개가 하나로 모이면 생성일순 세로 정렬.
+*/
+function sortLayout(){
+  const p=cur(); if(!p||p.nodes.length===0) return;
+  snapshot();
+  const nodes=p.nodes, edges=p.edges;
+  const out={}, inc={};
+  nodes.forEach(n=>{ out[n.id]=[]; inc[n.id]=[]; });
+  edges.forEach(e=>{ if(out[e.from]&&inc[e.to]){ out[e.from].push(e.to); inc[e.to].push(e.from); } });
+  const createdMs=id=>{ const t=Date.parse((byId(id).created||"")+"T00:00:00"); return isNaN(t)?Infinity:t; };
+  const H=id=>getDims(byId(id)).h, W=id=>getDims(byId(id)).w;
+
+  // 예상 날짜 → 날짜 랭크(0,1,2..)로 최소 컬럼 결정
+  const uniq=[...new Set(nodes.filter(n=>n.date).map(n=>n.date))].sort();
+  const dateRank={}; uniq.forEach((d,i)=>dateRank[d]=i);
+  const minCol=n=> (n.date? dateRank[n.date] : 0);
+
+  // 위상정렬
+  const indeg={}; nodes.forEach(n=>indeg[n.id]=inc[n.id].length);
+  let q=nodes.filter(n=>indeg[n.id]===0).map(n=>n.id);
+  const topo=[], seen=new Set();
+  while(q.length){ const id=q.shift(); if(seen.has(id))continue; seen.add(id); topo.push(id);
+    for(const nb of out[id]){ if(--indeg[nb]<=0 && !seen.has(nb)) q.push(nb); } }
+  nodes.forEach(n=>{ if(!seen.has(n.id)) topo.push(n.id); });
+
+  // 컬럼 = max(날짜랭크, 모든 선행노드 컬럼+1)
+  const col={}; nodes.forEach(n=>col[n.id]=0);
+  topo.forEach(id=>{
+    let c=minCol(byId(id));
+    inc[id].forEach(pid=>{ c=Math.max(c, (col[pid]||0)+1); });
+    col[id]=c;
+  });
+
+  // 컬럼별 그룹
+  const colsArr=[];
+  nodes.forEach(n=>{ const c=col[n.id]; (colsArr[c]||(colsArr[c]=[])).push(n.id); });
+
+  // 세로 좌표: 선행노드 평균(체인 가로 유지), 루트는 생성일순, 겹치면 카드 높이만큼 벌림
+  const yOf={};
+  for(let c=0;c<colsArr.length;c++){
+    const ids=colsArr[c]; if(!ids) continue;
+    const desired={};
+    ids.forEach(id=>{ const ps=inc[id].map(pid=>yOf[pid]).filter(v=>v!=null);
+      desired[id]= ps.length? ps.reduce((a,b)=>a+b,0)/ps.length : null; });
+    ids.sort((a,b)=>{
+      const da=desired[a], db=desired[b];
+      if(da==null&&db==null) return createdMs(a)-createdMs(b);
+      if(da==null) return 1; if(db==null) return -1;
+      return da-db || createdMs(a)-createdMs(b);
+    });
+    let prev=null;
+    ids.forEach(id=>{
+      let y=desired[id];
+      if(prev!=null){ const minY=yOf[prev]+H(prev)/2+H(id)/2+44; if(y==null||y<minY) y=minY; }
+      else if(y==null) y=0;
+      yOf[id]=y; prev=id;
+    });
+  }
+
+  // x 좌표: 컬럼 폭을 반영해 가로 간격 확보
+  const colW=[]; colsArr.forEach((ids,c)=>{ if(ids) colW[c]=Math.max(60, ...ids.map(W)); });
+  const colX=[]; let xc=0;
+  colsArr.forEach((ids,c)=>{ if(!ids) return; colX[c]=xc+colW[c]/2; xc+=colW[c]+120; });
+
+  nodes.forEach(n=>{ n.x=colX[col[n.id]]; n.y=yOf[n.id]; });
+  touch(); renderCanvas(); fitView();
+}
+
+/* ---------------- pointer interactions ---------------- */
+let drag=null; // {type:'node'|'pan'|'link'|'resize', ...}
+const marqueeEl=document.getElementById("marquee");
+let cHeld=false;   // Shift+C 위치 교환용 'c' 키 상태
+window.addEventListener("keydown",e=>{
+  if(e.key==="c"||e.key==="C") cHeld=true;
+  const el=document.activeElement, typing=el&&(el.tagName==="INPUT"||el.tagName==="TEXTAREA"||el.isContentEditable);
+  if(e.code==="Space" && !typing){ spaceHeld=true; svg.classList.add("grab"); e.preventDefault(); }
+});
+window.addEventListener("keyup",  e=>{
+  if(e.key==="c"||e.key==="C") cHeld=false;
+  if(e.code==="Space"){ spaceHeld=false; svg.classList.remove("grab"); }
+});
+window.addEventListener("blur",   ()=>{ cHeld=false; spaceHeld=false; svg.classList.remove("grab"); });
+
+svg.addEventListener("mousedown",(e)=>{
+  if(e.button!==0 && e.button!==1) return;
+  // 패닝: 가운데 버튼 또는 Space + 드래그
+  if(e.button===1 || spaceHeld){
+    const r=svg.getBoundingClientRect();
+    drag={type:"pan", sx:e.clientX, sy:e.clientY, vx:view.x, vy:view.y, scale:view.w/r.width};
+    svg.classList.add("panning"); e.preventDefault(); return;
+  }
+  if(e.button!==0) return;
+  const handle=e.target.closest("[data-handle]");
+  const resizeEl=e.target.closest("[data-resize]");
+  const nodeEl=e.target.closest("[data-node]");
+  const edgeEl=e.target.closest("[data-edge]");
+
+  if(resizeEl){
+    const id=resizeEl.dataset.resize; selectOnly(id);
+    snapshot();
+    drag={type:"resize", id};
+    renderCanvas(); renderInspector();
+    e.preventDefault(); return;
+  }
+  if(handle){
+    const id=handle.dataset.handle; const a=byId(id);
+    drag={type:"link", from:id, ax:a.x, ay:a.y};
+    e.preventDefault(); return;
+  }
+  if(nodeEl){
+    let id=nodeEl.dataset.node; const w=toWorld(e); let snapTaken=false;
+    if(cHeld && e.shiftKey && selNode && selNode!==id){   // Shift+C: 선택한 카드와 위치 교환
+      const a=byId(selNode), b=byId(id);
+      snapshot();
+      const tx=a.x, ty=a.y; a.x=b.x; a.y=b.y; b.x=tx; b.y=ty;
+      touch(); renderCanvas();
+      e.preventDefault(); return;
+    }
+    if(e.altKey){                                   // Option: 복사해서 새 노드 생성 후 그걸 드래그
+      snapshot(); snapTaken=true;
+      const src=byId(id);
+      const copy={...src, id:uid(), created:todayISO()};
+      delete copy._key; delete copy._group;
+      cur().nodes.push(copy); id=copy.id; touch();
+      selectOnly(id); const n=byId(id);
+      drag={type:"node", id, dx:w.x-n.x, dy:w.y-n.y, moved:false, snapTaken};
+      renderCanvas(); renderInspector();
+      e.preventDefault(); return;
+    }
+    if(selSet.has(id) && selSet.size>1){            // 다중 선택 그룹 이동
+      const init=new Map(); selSet.forEach(sid=>{ const sn=byId(sid); if(sn) init.set(sid,{x:sn.x,y:sn.y}); });
+      drag={type:"group", anchor:id, gx:w.x, gy:w.y, init, moved:false};
+      e.preventDefault(); return;
+    }
+    selectOnly(id);
+    const n=byId(id);
+    drag={type:"node", id, dx:w.x-n.x, dy:w.y-n.y, moved:false, snapTaken};
+    renderCanvas(); renderInspector();
+    e.preventDefault(); return;
+  }
+  if(edgeEl){
+    selSet=new Set(); selNode=null; selEdge=edgeEl.dataset.edge; renderCanvas(); renderInspector();
+    e.preventDefault(); return;
+  }
+  // 빈 공간 -> 마퀴(드래그) 선택
+  const w=toWorld(e);
+  clearSel();
+  drag={type:"marquee", x0:w.x, y0:w.y};
+  renderCanvas(); renderInspector();
+  e.preventDefault();
+});
+
+window.addEventListener("mousemove",(e)=>{
+  if(!drag) return;
+  if(drag.type==="resize"){
+    const ww=toWorld(e); const n=byId(drag.id); if(!n) return;
+    n.w=Math.max(36,Math.min(440, (ww.x-n.x)*2)); renderCanvas();
+    const f=document.getElementById("fSize"); if(f) f.value=Math.round(n.w);
+    return;
+  }
+  if(drag.type==="marquee"){
+    const w=toWorld(e);
+    const x1=Math.min(drag.x0,w.x), y1=Math.min(drag.y0,w.y);
+    const x2=Math.max(drag.x0,w.x), y2=Math.max(drag.y0,w.y);
+    marqueeEl.setAttribute("x",x1); marqueeEl.setAttribute("y",y1);
+    marqueeEl.setAttribute("width",x2-x1); marqueeEl.setAttribute("height",y2-y1);
+    marqueeEl.classList.add("show");
+    const ns=new Set();
+    for(const n of cur().nodes){ const d=getDims(n);
+      if(n.x+d.w/2>=x1 && n.x-d.w/2<=x2 && n.y+d.h/2>=y1 && n.y-d.h/2<=y2) ns.add(n.id); }
+    selSet=ns; selNode = ns.size===1?[...ns][0]:null;
+    renderCanvas();
+    return;
+  }
+  if(drag.type==="group"){
+    const w=toWorld(e);
+    if(!drag.moved){ snapshot(); drag.moved=true; }
+    let dx=w.x-drag.gx, dy=w.y-drag.gy, gv="";
+    if(e.shiftKey){                                  // Shift: 그룹 기준(잡은 카드)을 비선택 카드 중심선에 스냅
+      const an=drag.init.get(drag.anchor); const nx=an.x+dx, ny=an.y+dy;
+      const r=svg.getBoundingClientRect(); const snap=9*(view.w/(r.width||1000));
+      let sX=null,sY=null,bx=snap,by=snap;
+      for(const o of cur().nodes){ if(selSet.has(o.id)) continue;
+        const ox=Math.abs(nx-o.x), oy=Math.abs(ny-o.y);
+        if(ox<bx){bx=ox;sX=o.x;} if(oy<by){by=oy;sY=o.y;} }
+      if(sX!=null){ dx+=sX-nx; gv+=`<line class="guide" x1="${sX}" y1="${view.y}" x2="${sX}" y2="${view.y+view.h}"/>`; }
+      if(sY!=null){ dy+=sY-ny; gv+=`<line class="guide" x1="${view.x}" y1="${sY}" x2="${view.x+view.w}" y2="${sY}"/>`; }
+    }
+    guideLayer.innerHTML=gv;
+    drag.init.forEach((p0,id)=>{ const n=byId(id); if(n){ n.x=p0.x+dx; n.y=p0.y+dy; } });
+    renderCanvas();
+    return;
+  }
+  if(drag.type==="node"){
+    const w=toWorld(e); const n=byId(drag.id); if(!n) return;
+    if(!drag.moved && !drag.snapTaken){ snapshot(); drag.snapTaken=true; }  // 이동 시작 시 1회
+    let nx=w.x-drag.dx, ny=w.y-drag.dy;
+    let gv="";
+    if(e.shiftKey){                                  // Shift: 다른 원의 중심선에 스냅
+      const r=svg.getBoundingClientRect();
+      const snap=9*(view.w/(r.width||1000));         // 화면 ~9px 기준
+      let snapX=null, snapY=null, bx=snap, by=snap;
+      for(const o of cur().nodes){ if(o.id===n.id) continue;
+        const dx=Math.abs(nx-o.x), dy=Math.abs(ny-o.y);
+        if(dx<bx){ bx=dx; snapX=o.x; }
+        if(dy<by){ by=dy; snapY=o.y; }
+      }
+      if(snapX!=null){ nx=snapX; gv+=`<line class="guide" x1="${snapX}" y1="${view.y}" x2="${snapX}" y2="${view.y+view.h}"/>`; }
+      if(snapY!=null){ ny=snapY; gv+=`<line class="guide" x1="${view.x}" y1="${snapY}" x2="${view.x+view.w}" y2="${snapY}"/>`; }
+    }
+    guideLayer.innerHTML=gv;
+    n.x=nx; n.y=ny; drag.moved=true; renderCanvas();
+  }else if(drag.type==="pan"){
+    view.x=drag.vx-(e.clientX-drag.sx)*drag.scale;
+    view.y=drag.vy-(e.clientY-drag.sy)*drag.scale; applyView();
+  }else if(drag.type==="link"){
+    const w=toWorld(e);
+    const a=byId(drag.from); const d=getDims(a);
+    const sx=a.x+d.w/2, sy=a.y;                       // 출발 카드의 오른쪽 변에서 시작
+    const co=Math.max(45,Math.abs(w.x-sx)*0.5);
+    tempLink.setAttribute("d",`M ${sx} ${sy} C ${sx+co} ${sy}, ${w.x-co} ${w.y}, ${w.x} ${w.y}`);
+  }
+});
+
+window.addEventListener("mouseup",(e)=>{
+  if(!drag) return;
+  if(drag.type==="link"){
+    tempLink.removeAttribute("d");
+    const w=toWorld(e); const p=cur();
+    const target=p.nodes.find(n=>{ if(n.id===drag.from) return false; const d=getDims(n); return Math.abs(w.x-n.x)<=d.w/2 && Math.abs(w.y-n.y)<=d.h/2; });
+    if(target){
+      const exists=p.edges.some(ed=>ed.from===drag.from&&ed.to===target.id);
+      if(!exists && drag.from!==target.id){
+        snapshot();
+        p.edges.push({id:uid(),from:drag.from,to:target.id}); touch();
+      }
+    }
+    renderCanvas();
+  }else if(drag.type==="node"||drag.type==="resize"){ touch(); }
+  else if(drag.type==="group"){ if(drag.moved) touch(); }
+  else if(drag.type==="marquee"){
+    marqueeEl.classList.remove("show");
+    marqueeEl.setAttribute("width",0); marqueeEl.setAttribute("height",0);
+    renderInspector();
+  }
+  guideLayer.innerHTML="";
+  svg.classList.remove("panning");
+  drag=null;
+});
+
+svg.addEventListener("wheel",(e)=>{
+  e.preventDefault();
+  const r=svg.getBoundingClientRect();
+  const mx=(e.clientX-r.left)/r.width, my=(e.clientY-r.top)/r.height;
+  const wx=view.x+mx*view.w, wy=view.y+my*view.h;
+  const f=Math.exp(e.deltaY*0.0012);
+  let nw=Math.min(8000,Math.max(220,view.w*f));
+  const ratio=view.h/view.w; const nh=nw*ratio;
+  view.x=wx-mx*nw; view.y=wy-my*nh; view.w=nw; view.h=nh; applyView();
+},{passive:false});
+
+window.addEventListener("keydown",(e)=>{
+  if(e.key==="Escape"){ document.getElementById("hkOverlay").classList.remove("show"); return; }
+  const el=document.activeElement;
+  const typing=!!(el && (el.tagName==="INPUT"||el.tagName==="TEXTAREA"||el.isContentEditable));
+  if((e.metaKey||e.ctrlKey) && (e.key==="z"||e.key==="Z") && !e.shiftKey){
+    if(typing) return;          // 텍스트 입력 중엔 브라우저 기본 실행취소 사용
+    e.preventDefault(); undo(); return;
+  }
+  if(e.key==="Delete"){         // Backspace로는 삭제 안 함(문자 편집 중 사고 방지)
+    if(typing) return;
+    if(selSet.size>1){ e.preventDefault(); deleteSelected(); }
+    else if(selNode){ e.preventDefault(); deleteNode(selNode); }
+    else if(selEdge){ const p=cur(); snapshot(); p.edges=p.edges.filter(x=>x.id!==selEdge); selEdge=null; touch(); renderCanvas(); renderInspector(); }
+  }
+});
+
+document.getElementById("addTask").onclick=addTask;
+document.getElementById("sortBtn").onclick=sortLayout;
+document.getElementById("addProj").onclick=addProject;
+// ---- search by task name ----
+const searchBox=document.getElementById("searchBox");
+const searchResults=document.getElementById("searchResults");
+function plainText(html){ const d=document.createElement("div"); d.innerHTML=html||""; return (d.textContent||"").trim(); }
+function runSearch(){
+  const q=searchBox.value.trim().toLowerCase(); const p=cur();
+  if(!q||!p){ searchResults.innerHTML=""; return; }
+  const hits=p.nodes.filter(n=>plainText(n.name).toLowerCase().includes(q)).slice(0,40);
+  searchResults.innerHTML = hits.length
+    ? hits.map(n=>`<div class="sr" data-id="${n.id}"><span class="dot ${n.status}"></span><span class="srn">${esc(plainText(n.name)||"(untitled)")}</span></div>`).join("")
+    : `<div class="sr-none">No matches</div>`;
+}
+function gotoNode(id){
+  const n=byId(id); if(!n) return;
+  selectOnly(n.id); centerOn(n); renderCanvas(); renderInspector();
+}
+searchBox.addEventListener("input",runSearch);
+searchBox.addEventListener("keydown",e=>{
+  if(e.key==="Enter"){ const first=searchResults.querySelector("[data-id]"); if(first) gotoNode(first.dataset.id); }
+});
+searchResults.addEventListener("click",e=>{ const el=e.target.closest("[data-id]"); if(el) gotoNode(el.dataset.id); });
+
+// ---- export / import (backup & migrate between runtimes) ----
+document.getElementById("exportBtn").onclick=()=>{
+  const json=JSON.stringify(state,null,2);
+  if(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.save){
+    window.webkit.messageHandlers.save.postMessage(json);   // native app: save panel
+    return;
+  }
+  const blob=new Blob([json],{type:"application/json"});      // browser: download
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download="workflowtree-backup.json"; document.body.appendChild(a); a.click();
+  a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+};
+const importFile=document.getElementById("importFile");
+document.getElementById("importBtn").onclick=()=>importFile.click();
+importFile.onchange=()=>{
+  const f=importFile.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const data=JSON.parse(r.result);
+      if(!data||!Array.isArray(data.projects)) throw new Error("not a WorkflowTree backup");
+      if(!confirm(`Import ${data.projects.length} project(s)? This replaces the current data.`)) return;
+      state=data;
+      if(!cur()&&state.projects[0]) state.currentId=state.projects[0].id;
+      ensureProject(); save(); render(); fitView();
+    }catch(e){ alert("Import failed: "+e.message); }
+    finally{ importFile.value=""; }
+  };
+  r.readAsText(f);
+};
+
+const hkOverlay=document.getElementById("hkOverlay");
+document.getElementById("hotkeysBtn").onclick=()=>hkOverlay.classList.add("show");
+document.getElementById("hkClose").onclick=()=>hkOverlay.classList.remove("show");
+hkOverlay.onclick=(e)=>{ if(e.target===hkOverlay) hkOverlay.classList.remove("show"); };
+window.addEventListener("resize",()=>{ const r=svg.getBoundingClientRect(); view.h=view.w*(r.height/r.width); applyView(); });
+
+/* ---------------- go ---------------- */
+ensureProject();
+if(!state._mw120){            // 기존 카드들을 모두 120으로 1회 통일
+  state.projects.forEach(p=>(p.nodes||[]).forEach(n=>{ n.w=120; delete n.r; }));
+  state._mw120=true;
+}
+save(); render(); initView();
+</script>
+</body>
+</html>
